@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NINL Dhamra SAP Entry Builder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1720;
+    color: #e6ecf2;
+    min-height: 100vh;
+    padding: 32px 20px 60px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid #263241;
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+  .tag {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+    color: #7ba7cc;
+    background: #142230;
+    border: 1px solid #24405a;
+    padding: 3px 8px;
+    border-radius: 3px;
+  }
+  .dropzone {
+    border: 1.5px dashed #34495e;
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: #131d29;
+  }
+  .dropzone.drag { border-color: #4a9eda; background: #16283a; }
+  .dropzone p { margin: 6px 0; color: #9fb2c4; font-size: 14px; }
+  .dropzone .big { font-size: 15px; color: #dce6ef; font-weight: 500; }
+  .dropzone .small { font-size: 12px; color: #5f7488; }
+  input[type=file] { display: none; }
+
+  .filelist { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .frow {
+    display: flex; align-items: center; gap: 10px;
+    background: #131d29; border: 1px solid #223040; border-radius: 6px;
+    padding: 8px 12px; font-size: 13px;
+  }
+  .frow .name { flex: 1; color: #cdd9e3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .frow .status { font-size: 11px; padding: 2px 8px; border-radius: 3px; font-family: monospace; }
+  .status.ok { background: #113627; color: #5fd996; }
+  .status.warn { background: #3a2f10; color: #e8b94a; }
+  .status.pending { background: #22303f; color: #7f92a3; }
+  .frow .remove { cursor: pointer; color: #5f7488; font-size: 13px; padding: 2px 6px; }
+  .frow .remove:hover { color: #e0e6eb; }
+
+  table.preview {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 22px;
+    font-size: 12.5px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+  }
+  table.preview th, table.preview td {
+    border: 1px solid #223040;
+    padding: 6px 9px;
+    text-align: left;
+    white-space: nowrap;
+  }
+  table.preview th {
+    background: #16222f;
+    color: #8fa4b8;
+    font-weight: 500;
+    text-align: left;
+    position: sticky; left: 0;
+  }
+  table.preview td.label { background: #16222f; color: #8fa4b8; position: sticky; left: 0; }
+  table.preview td.blank { color: #55606b; font-style: italic; }
+  .tablewrap { overflow-x: auto; border-radius: 6px; }
+
+  .warnbox {
+    margin-top: 16px;
+    background: #241b0c;
+    border: 1px solid #503c14;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #e8c07a;
+  }
+  .warnbox div { margin: 3px 0; }
+
+  .actions { margin-top: 22px; display: flex; gap: 12px; align-items: center; }
+  button.download {
+    background: #1f6feb; color: #fff; border: none; border-radius: 6px;
+    padding: 11px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.download:disabled { background: #2a3340; color: #5f7488; cursor: not-allowed; }
+  button.download:not(:disabled):hover { background: #2a7ef5; }
+  .hint { font-size: 12px; color: #5f7488; }
+
+  footer { margin-top: 28px; font-size: 11.5px; color: #4a5866; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>NINL Dhamra SAP entry builder</h1>
+    <span class="tag">DPCB &rarr; NINS</span>
+  </header>
+
+  <div class="dropzone" id="dropzone">
+    <p class="big">Drop RR PDFs here, or click to browse</p>
+    <p class="small">Multiple files at once — one column per rake</p>
+    <input type="file" id="fileInput" accept="application/pdf" multiple>
+  </div>
+
+  <div class="filelist" id="filelist"></div>
+
+  <div id="previewArea"></div>
+  <div id="warnArea"></div>
+
+  <div class="actions">
+    <button class="download" id="downloadBtn" disabled>Download SAP entry .xlsx</button>
+    <span class="hint" id="hintText"></span>
+  </div>
+
+  <footer>
+    Rows 1&ndash;16 auto-filled from the RR PDF and the grade lookup table. Rows 17&ndash;21
+    (STO nos, Delivery, Invoice no, E-waybill Nos) are left blank for manual entry.
+  </footer>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const GRADE_TABLE = [
+  { names: ['Thamoor HCC'], type: 'COAL', mat: '120005993' },
+  { names: ['Fitzroy HCC', 'CDHCC'], type: 'COAL', mat: '120002183' },
+  { names: ['SONAMA HCC'], type: 'COAL', mat: '129000139' },
+  { names: ['Lake Vermont HCC', 'LV HCC', 'LVHCC'], type: 'COAL', mat: '129000140' },
+  { names: ['GOONYELLA C'], type: 'COAL', mat: '129000101' },
+  { names: ['GOONYELLA'], type: 'COAL', mat: '120003830' },
+  { names: ['SP GR. LIMESTONE', 'SP LS', 'SPLS'], type: 'FLUX', mat: '120003760' },
+  { names: ['DOLOMITE 10-40', 'DOLO 10-40', 'DOLO10-40'], type: 'FLUX', mat: '120007034' },
+  { names: ['PYROXENITE', 'PYRO'], type: 'FLUX', mat: '120003433' },
+  { names: ['GREGORY HCC'], type: 'COAL', mat: '129000154' },
+  { names: ['Blackwater Weak C.C', 'BWW'], type: 'COAL', mat: '120008560' },
+  { names: ['LAMPUNUT HARD CC', 'LAMPUNUT'], type: 'COAL', mat: '120008870' },
+  { names: ['RIVERSIDE'], type: 'COAL', mat: '120008790' },
+  { names: ['CAVAL RIDGE'], type: 'COAL', mat: '129000173' },
+  { names: ['DAUNIA'], type: 'COAL', mat: '129000184' },
+  { names: ['AUSTRALIAN SEMI SOFT COAL'], type: 'COAL', mat: '129000187' },
+  { names: ['GLV PRIME'], type: 'COAL', mat: '129000197' },
+  { names: ['CARDINAL C.C'], type: 'COAL', mat: '129000202' },
+  { names: ['BMTS COKING COAL'], type: 'COAL', mat: '129000212' },
+];
+const HANDLING_CHARGE = { COAL: 193.67, FLUX: 142.46 };
+const STORAGE = { COAL: 'CPRM', FLUX: 'NRMO' };
+const DISPATCH_PLANT = { COAL: '301', FLUX: '300' };
+const ROW_LABELS = ['Rake', 'Product', 'Material Nos', 'Storage', 'Date', 'Dispatch plant',
+  'RR nos', 'FNR Nos', 'Tare', 'Gross', 'Net', 'Gross Freight', 'GST', 'Net Freight',
+  'Freight Rate', 'HANDLING CHARGES'];
+
+function norm(s) { return (s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function round2(n) {
+  if (n === null || n === undefined || isNaN(n)) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function matchGrade(filename, commodityDesc) {
+  const fn = norm(filename);
+  let best = null;
+  for (const entry of GRADE_TABLE) {
+    for (const name of entry.names) {
+      const n = norm(name);
+      if (n && fn.includes(n)) {
+        if (!best || n.length > best.matchLen) best = { ...entry, matchLen: n.length, label: entry.names[0] };
+      }
+    }
+  }
+  if (best) return { type: best.type, mat: best.mat, label: best.label };
+  const desc = norm(commodityDesc);
+  let typeGuess = null;
+  if (desc.includes('COAL')) typeGuess = 'COAL';
+  else if (desc.includes('PYROX') || desc.includes('LIMESTONE') || desc.includes('DOLOM')) typeGuess = 'FLUX';
+  return { type: typeGuess, mat: null, label: null };
+}
+
+function rakeSuffix(filename) {
+  const m = filename.toUpperCase().match(/(NINS-\d+)/);
+  return m ? m[1] : null;
+}
+function rakeSortKey(filename) {
+  const m = filename.toUpperCase().match(/NINS-(\d+)/);
+  return m ? parseInt(m[1], 10) : 999;
+}
+
+async function getPageLines(page) {
+  const tc = await page.getTextContent();
+  const items = tc.items.filter(it => it.str.length > 0);
+  const lines = [];
+  for (const it of items) {
+    const y = Math.round(it.transform[5]);
+    let line = lines.find(l => Math.abs(l.y - y) <= 2);
+    if (!line) { line = { y, items: [] }; lines.push(line); }
+    line.items.push(it);
+  }
+  lines.sort((a, b) => b.y - a.y);
+  return lines.map(l => {
+    l.items.sort((a, b) => a.transform[4] - b.transform[4]);
+    let text = '';
+    let prevEnd = null;
+    for (const it of l.items) {
+      const x0 = it.transform[4];
+      if (prevEnd !== null && x0 - prevEnd > 1.5 && !text.endsWith(' ') && !it.str.startsWith(' ')) {
+        text += ' ';
+      }
+      text += it.str;
+      prevEnd = x0 + (it.width || 0);
+    }
+    return { y: l.y, text };
+  });
+}
+function joinLines(lines) { return lines.map(l => l.text).join('\n'); }
+
+async function parseRRPdf(file) {
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  const page0 = await doc.getPage(1);
+  const page1 = doc.numPages > 1 ? await doc.getPage(2) : null;
+  const lastPage = await doc.getPage(doc.numPages);
+
+  const text0 = joinLines(await getPageLines(page0));
+  const text1 = page1 ? joinLines(await getPageLines(page1)) : '';
+  const linesLast = await getPageLines(lastPage);
+
+  const mHead = text0.match(/RR No:\s*(\S+)\s*RR Date:\s*(\S+)\s*FNR:\s*(\S+)/);
+  if (!mHead) throw new Error('Could not find RR No / Date / FNR header');
+  const [, rrNo, rrDate, fnr] = mHead;
+
+  const mDesc = text0.match(/Commodity Description:\s*(.+?)\s*\(/);
+  const commodityDesc = mDesc ? mDesc[1].trim() : '';
+
+  const mFreight = text0.match(/Total Freight:\s*Rs\s*([\d,]+)/);
+  const grossFreight = mFreight ? parseFloat(mFreight[1].replace(/,/g, '')) : null;
+
+  const mGst = text1.match(/GST AMOUNT RS\.([\d.]+)/);
+  const gst = mGst ? parseFloat(mGst[1]) : null;
+
+  const totalIdx = linesLast.findIndex(l => l.text.trim().startsWith('Total:'));
+  if (totalIdx === -1) throw new Error('Could not find wagon-details Total row');
+  const totalLine = linesLast[totalIdx].text.trim();
+  const nextLine = linesLast[totalIdx + 1] ? linesLast[totalIdx + 1].text.trim() : '';
+
+  const nums = totalLine.replace('Total:', '').trim().split(/\s+/);
+  let grossStr = nums[1];
+  let actualStr = nums[3];
+  const cont = nextLine.split(/\s+/).filter(Boolean);
+  if (cont.length === 2 && /^\d+$/.test(cont[0]) && /^\d+$/.test(cont[1])) {
+    grossStr = grossStr + cont[0];
+    actualStr = actualStr + cont[1];
+  }
+  const permissible = parseFloat(nums[4]);
+  const actualFromWrap = parseFloat(actualStr);
+
+  const [dd, mm, yyyy] = rrDate.split('-');
+  return {
+    rrNo, rrDate, fnr, commodityDesc, grossFreight, gst,
+    gross: permissible,
+    net: actualFromWrap,
+    dateFmt: `${dd}.${mm}.${yyyy}`,
+    month: mm,
+  };
+}
+
+// ---- UI wiring ----
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const filelistEl = document.getElementById('filelist');
+const previewArea = document.getElementById('previewArea');
+const warnArea = document.getElementById('warnArea');
+const downloadBtn = document.getElementById('downloadBtn');
+const hintText = document.getElementById('hintText');
+
+let entries = []; // { file, status, data, columnData }
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  handleFiles(Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')));
+});
+fileInput.addEventListener('change', e => { handleFiles(Array.from(e.target.files)); fileInput.value = ''; });
+
+function handleFiles(files) {
+  for (const f of files) {
+    if (entries.some(en => en.file.name === f.name)) continue;
+    entries.push({ file: f, status: 'pending', data: null, error: null, grade: null });
+  }
+  renderFileList();
+  processAll();
+}
+
+function renderFileList() {
+  filelistEl.innerHTML = '';
+  entries.forEach((en, i) => {
+    const row = document.createElement('div');
+    row.className = 'frow';
+    const statusClass = en.status === 'ok' ? 'ok' : en.status === 'warn' ? 'warn' : en.status === 'error' ? 'warn' : 'pending';
+    const statusText = en.status === 'ok' ? 'parsed' : en.status === 'warn' ? 'parsed (check)' : en.status === 'error' ? 'failed' : 'reading...';
+    row.innerHTML = `
+      <span class="name">${en.file.name}</span>
+      <span class="status ${statusClass}">${statusText}</span>
+      <span class="remove" data-i="${i}">&times;</span>
+    `;
+    filelistEl.appendChild(row);
+  });
+  filelistEl.querySelectorAll('.remove').forEach(el => {
+    el.addEventListener('click', () => {
+      entries.splice(parseInt(el.dataset.i, 10), 1);
+      renderFileList();
+      renderPreview();
+    });
+  });
+}
+
+async function processAll() {
+  for (const en of entries) {
+    if (en.data || en.error) continue;
+    try {
+      const data = await parseRRPdf(en.file);
+      const grade = matchGrade(en.file.name, data.commodityDesc);
+      en.data = data;
+      en.grade = grade;
+      en.status = (grade.type === null || grade.mat === null) ? 'warn' : 'ok';
+    } catch (e) {
+      en.error = e.message;
+      en.status = 'error';
+    }
+    renderFileList();
+  }
+  renderPreview();
+}
+
+function renderPreview() {
+  const ok = entries.filter(en => en.data);
+  if (ok.length === 0) {
+    previewArea.innerHTML = '';
+    warnArea.innerHTML = '';
+    downloadBtn.disabled = true;
+    hintText.textContent = '';
+    return;
+  }
+  ok.sort((a, b) => rakeSortKey(a.file.name) - rakeSortKey(b.file.name));
+
+  const cols = ok.map(en => {
+    const { data, grade } = en;
+    const rakeLabel = `D${data.month} ${rakeSuffix(en.file.name) || '?'}`;
+    return {
+      rake: rakeLabel,
+      product: grade.label || null,
+      mat: grade.mat || null,
+      storage: STORAGE[grade.type] || null,
+      date: data.dateFmt,
+      dispatch: DISPATCH_PLANT[grade.type] || null,
+      rrno: 'L' + data.rrNo,
+      fnr: data.fnr,
+      tareFormula: true,
+      gross: data.gross,
+      net: data.net,
+      grossFreight: data.grossFreight,
+      gst: data.gst,
+      netFreightFormula: true,
+      freightRateFormula: true,
+      handling: HANDLING_CHARGE[grade.type] || null,
+    };
+  });
+
+  let html = '<div class="tablewrap"><table class="preview"><tr><th>Row</th>';
+  cols.forEach(c => html += `<th>${c.rake}</th>`);
+  html += '</tr>';
+
+  const rows = [
+    ['Product', c => c.product],
+    ['Material Nos', c => c.mat],
+    ['Storage', c => c.storage],
+    ['Date', c => c.date],
+    ['Dispatch plant', c => c.dispatch],
+    ['RR nos', c => c.rrno],
+    ['FNR Nos', c => c.fnr],
+    ['Tare', c => round2(c.gross - c.net)],
+    ['Gross', c => c.gross],
+    ['Net', c => c.net],
+    ['Gross Freight', c => c.grossFreight],
+    ['GST', c => c.gst],
+    ['Net Freight', c => round2(c.grossFreight - c.gst)],
+    ['Freight Rate', c => round2((c.grossFreight - c.gst) / c.net)],
+    ['Handling Charges', c => c.handling],
+  ];
+  rows.forEach(([label, fn]) => {
+    html += `<tr><td class="label">${label}</td>`;
+    cols.forEach(c => {
+      const v = fn(c);
+      if (v === null || v === undefined) html += `<td class="blank">&mdash;</td>`;
+      else html += `<td>${v}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</table></div>';
+  previewArea.innerHTML = html;
+
+  const warnings = [];
+  entries.forEach(en => {
+    if (en.error) warnings.push(`${en.file.name}: could not parse \u2014 ${en.error}`);
+    else if (en.status === 'warn') {
+      const g = en.grade;
+      if (g.type === null) warnings.push(`${en.file.name}: could not determine COAL/FLUX type \u2014 fill Product, Material No, Storage, Dispatch plant and Handling charges manually.`);
+      else if (g.mat === null) warnings.push(`${en.file.name}: no grade match in reference table \u2014 Product and Material No left blank (type detected as ${g.type}).`);
+    }
+  });
+  if (warnings.length) {
+    warnArea.innerHTML = '<div class="warnbox">' + warnings.map(w => `<div>&#9888; ${w}</div>`).join('') + '</div>';
+  } else {
+    warnArea.innerHTML = '';
+  }
+
+  downloadBtn.disabled = ok.length === 0;
+  hintText.textContent = `${ok.length} rake${ok.length === 1 ? '' : 's'} ready`;
+}
+
+downloadBtn.addEventListener('click', () => {
+  const ok = entries.filter(en => en.data).sort((a, b) => rakeSortKey(a.file.name) - rakeSortKey(b.file.name));
+  if (ok.length === 0) return;
+
+  const wb = XLSX.utils.book_new();
+  const wsData = [];
+  for (let r = 0; r < ROW_LABELS.length; r++) wsData.push([ROW_LABELS[r] + ' ']);
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  ok.forEach((en, idx) => {
+    const col = idx + 1; // 0 = label column
+    const colLetter = XLSX.utils.encode_col(col);
+    const { data, grade } = en;
+    const rakeLabel = `D${data.month} ${rakeSuffix(en.file.name) || '?'}`;
+
+    const setCell = (row, value, formula) => {
+      const addr = XLSX.utils.encode_cell({ r: row - 1, c: col });
+      if (formula) ws[addr] = { t: 'n', f: formula };
+      else if (value === null || value === undefined) { /* leave blank */ }
+      else if (typeof value === 'number') ws[addr] = { t: 'n', v: value };
+      else ws[addr] = { t: 's', v: String(value) };
+    };
+
+    setCell(1, rakeLabel);
+    setCell(2, grade.label);
+    setCell(3, grade.mat);
+    setCell(4, STORAGE[grade.type]);
+    setCell(5, data.dateFmt);
+    setCell(6, DISPATCH_PLANT[grade.type]);
+    setCell(7, 'L' + data.rrNo);
+    setCell(8, data.fnr);
+    setCell(9, null, `${colLetter}10-${colLetter}11`);
+    setCell(10, data.gross);
+    setCell(11, data.net);
+    setCell(12, data.grossFreight);
+    setCell(13, data.gst);
+    setCell(14, null, `${colLetter}12-${colLetter}13`);
+    setCell(15, null, `${colLetter}14/${colLetter}11`);
+    setCell(16, HANDLING_CHARGE[grade.type]);
+  });
+
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  range.e.c = ok.length;
+  ws['!ref'] = XLSX.utils.encode_range(range);
+  ws['!cols'] = [{ wch: 20 }, ...ok.map(() => ({ wch: 16 }))];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'SAP ENTRY');
+  XLSX.writeFile(wb, 'NINL_DHAMRA_SAP_ENTRY.xlsx');
+});
+</script>
+</body>
+</html>
